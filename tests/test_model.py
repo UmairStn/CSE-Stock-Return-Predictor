@@ -51,9 +51,9 @@ def test_multi_horizon_target_is_cumulative_return():
 
 def test_train_writes_model_metadata_and_embargo():
     import json
+    import shutil
 
     frame = prices()
-    model = xgb.XGBRegressor  # noqa: F841  (import check only)
     from pathlib import Path
 
     data_dir = Path(__file__).parent / "_tmp_train_data"
@@ -64,7 +64,7 @@ def test_train_writes_model_metadata_and_embargo():
     model_path = data_dir / "model.json"
     metadata_path = data_dir / "model.metadata.json"
     try:
-        metadata = train([csv_path], model_path, metadata_path, horizon=2)
+        metadata = train([csv_path], model_path, metadata_path, horizon=2, ablation=False)
         assert model_path.exists() and metadata_path.exists()
         saved = json.loads(metadata_path.read_text(encoding="utf-8"))
         assert saved["horizon_days"] == 2
@@ -72,6 +72,70 @@ def test_train_writes_model_metadata_and_embargo():
         assert metadata["training_rows"] + metadata["test_rows"] > 0
         assert "zero_return_baseline_mae" in metadata["metrics"]
     finally:
-        for path in (csv_path, model_path, metadata_path):
-            path.unlink(missing_ok=True)
-        data_dir.rmdir()
+        shutil.rmtree(data_dir, ignore_errors=True)
+
+
+def test_metadata_carries_feature_ranges_importances_and_slice_contract():
+    """Requirement 5: per-feature p1/p50/p99 training bands + importances."""
+    import json
+    import shutil
+    from pathlib import Path
+
+    frame = prices()
+    data_dir = Path(__file__).parent / "_tmp_meta_data"
+    data_dir.mkdir(exist_ok=True)
+    csv_path = data_dir / "TEST-N0000.CM.csv"
+    model_path = data_dir / "model.json"
+    metadata_path = data_dir / "model.metadata.json"
+    try:
+        frame.to_csv(csv_path, index=False)
+        metadata = train([csv_path], model_path, metadata_path, horizon=2, ablation=False)
+
+        assert set(metadata["feature_ranges"]) == set(FEATURE_COLUMNS)
+        assert len(metadata["feature_importances"]) == len(FEATURE_COLUMNS)
+        assert abs(sum(metadata["feature_importances"].values()) - 1.0) < 1e-6
+        for name in FEATURE_COLUMNS:
+            entry = metadata["feature_ranges"][name]
+            assert entry["p1"] <= entry["p50"] <= entry["p99"]
+
+        saved = json.loads(metadata_path.read_text(encoding="utf-8"))
+        assert saved["feature_ranges"] == metadata["feature_ranges"]
+    finally:
+        shutil.rmtree(data_dir, ignore_errors=True)
+
+
+def test_ablation_report_quantifies_each_feature():
+    import json
+    import shutil
+    from pathlib import Path
+
+    frame = prices()
+    data_dir = Path(__file__).parent / "_tmp_ablation_data"
+    data_dir.mkdir(exist_ok=True)
+    csv_path = data_dir / "TEST-N0000.CM.csv"
+    frame.to_csv(csv_path, index=False)
+    model_path = data_dir / "model.json"
+    metadata_path = data_dir / "model.metadata.json"
+    try:
+        metadata = train(
+            [csv_path], model_path, metadata_path, horizon=2, ablation=True,
+            ablation_dir=data_dir / "reports",
+        )
+        report_path = Path(metadata["feature_ablation_report"])
+        assert report_path.exists()
+        # report lands inside the test's own temp tree:
+        assert data_dir in report_path.parents
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        assert report["horizon_days"] == 2
+        assert report["full_model_heldout_mae"] == pytest.approx(
+            metadata["metrics"]["mae"]
+        )
+        assert set(report["features"]) == set(FEATURE_COLUMNS)
+        for entry in report["features"].values():
+            # delta == heldout - full (a dropped feature can *lower* MAE by noise
+            # margin, so only the internal consistency is asserted):
+            assert entry["mae_delta_vs_full"] == pytest.approx(
+                entry["heldout_mae"] - report["full_model_heldout_mae"]
+            )
+    finally:
+        shutil.rmtree(data_dir, ignore_errors=True)

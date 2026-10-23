@@ -25,6 +25,10 @@ Two properties of this dataset worth knowing:
 2. **Unadjusted prices.** Prices are downloaded with `auto_adjust=False`.
    Corporate actions (splits, scrip issues) appear as extreme daily returns;
    the training pipeline drops neighborhoods around returns above 40%.
+3. **Open is synthesized.** Although the raw CSVs carry Yahoo's `Open`, the
+   pipeline overwrites it with `Open(t) = Close(t-1)` everywhere, because the
+   live CSE feed has no open price (`o: null`). Do not delete the column in
+   re-fetches, but never treat it as a model input.
 
 ## Attribution
 

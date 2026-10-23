@@ -10,7 +10,7 @@ import yfinance as yf
 from .features import REQUIRED_OHLCV, validate_ohlcv
 from .universe import to_yahoo_symbol
 
-MIN_USABLE_ROWS = 200
+MIN_USABLE_ROWS = 200  # TRAINING-time guard only; serving requires SLICE_BARS (features.py)
 
 
 def fetch_history(symbol: str, period: str = "5y") -> pd.DataFrame:

@@ -41,12 +41,21 @@ data/processed/
 # --- Generated model artifacts (regenerate with `cse-analyzer train`) ---
 models/*.json
 !models/README.md
+models/backup_*/
 
 # --- Generated reports / plots / logs ---
 reports/generated/
 *.png
 *.log
 
-# --- Agent / planning workspace (not part of the portfolio) ---
+# --- Scratch, temporary, and test directories ---
+_*.py
+_tmp*/
+*.tmp
+
+# --- Agent, planning & integration workspaces (not part of the repository) ---
 .pi/
+.agents/
 plan/
+tradevision_*.md
+

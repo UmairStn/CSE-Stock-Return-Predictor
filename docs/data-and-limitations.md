@@ -14,6 +14,17 @@ Canonical project symbols use `TICKER.N0000`; Yahoo symbols generally use `TICKE
 
 Prices are fetched with `auto_adjust=False` so values represent the returned unadjusted series. Splits, scrip dividends, and other actions can create false extreme returns. The 40% jump filter is a defensive heuristic, not a replacement for verified corporate-action data.
 
+## The 5-bar slice and live-feed constraints
+
+The model's features are computed from exactly the trailing **5 completed daily bars** of each row (see [methodology](methodology.md)). This is dictated by the serving data source rather than preference: the live CSE API used at prediction time exposes only about **23 daily bars per symbol** with the fields `h`, `l`, `p` (last price), `q` (quantity), and `t` (epoch-milliseconds timestamp). There is **no open price** (`o` is always `null`), so `Open` is *defined* as the previous close on both the training and serving sides, and Yahoo's real open column is discarded at ingestion.
+
+Two data quirks this makes harmless:
+
+- Yahoo stores prices with float32 noise (`22.600000381469727`); features are computed in float64, and every feature is a ratio within one slice, so a stock's price level cancels out.
+- The CSE payload field `s` (an ambiguous ~10⁸-scale number, possibly turnover) is never read; only `h/l/p/q/t` are mapped.
+
+Consequence: any row's features depend on at most the five closes/highs/lows/volumes around it. Information the live feed cannot produce (longer lookbacks) is excluded from training *by construction*, not by convention.
+
 ## Modeling limitations
 
 - The universe emphasizes relatively liquid counters and is not the entire exchange.
